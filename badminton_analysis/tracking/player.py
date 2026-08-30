@@ -166,85 +166,79 @@ class PlayerTracker:
         stats = {}
         for region in ["upper", "lower"]:
             history = [pos for pos in list(self.court_history[region]) if pos is not None]
-            region_stats = {
-                "current_speed": 0,
-                "rally_avg_speed": 0,
-                "rally_max_speed": 0,
-                "rally_distance": 0,
-                "match_avg_speed": 0,
-                "match_max_speed": 0,
-                "match_distance": 0,
-                "position_count": len(history),
-            }
-
-            if len(history) < 2:
-                stats[region] = region_stats
-                continue
-
-            current_time = len(history) - 1
-            window_start = max(0, current_time - int(self.fps / 2))
-            half_second_total_distance = 0
-            valid_frames = 0
-            actual_time_span = 0
-            sample_interval = 5
-
-            if current_time - window_start < sample_interval:
-                sample_points = [window_start, current_time]
-            else:
-                sample_points = list(range(window_start, current_time + 1, sample_interval))
-                if current_time not in sample_points:
-                    sample_points.append(current_time)
-
-            for i in range(len(sample_points) - 1):
-                idx1 = sample_points[i]
-                idx2 = sample_points[i + 1]
-                p1 = np.array(history[idx1])
-                p2 = np.array(history[idx2])
-                distance = np.linalg.norm(p2 - p1)
-                time_span = (idx2 - idx1) / self.fps
-                max_possible_distance = self.max_frame_distance * (idx2 - idx1)
-
-                if distance > 0.05 and distance < max_possible_distance:
-                    half_second_total_distance += distance
-                    valid_frames += 1
-                    actual_time_span += time_span
-
-            current_speed = 0
-            if valid_frames > 0 and actual_time_span > 0:
-                current_speed = half_second_total_distance / actual_time_span
-                self._update_rally_and_match_stats(region, half_second_total_distance, current_speed)
-
-            current_speed = min(current_speed, 8.0)
-
-            rally_distance = self.rally_stats[region]["total_distance"]
-            rally_max_speed = self.rally_stats[region]["max_speed"]
-            rally_frames = self.rally_stats[region]["total_frames"]
-            if rally_frames > 1 and self.fps > 0:
-                rally_time = rally_frames / self.fps
-                rally_avg_speed = rally_distance / rally_time if rally_time > 0 else 0
-            else:
-                rally_avg_speed = 0
-
-            match_distance = self.match_stats[region]["total_distance"]
-            match_max_speed = self.match_stats[region]["max_speed"]
-            match_frames = self.match_stats[region]["total_frames"]
-            if match_frames > 1 and self.fps > 0:
-                match_time = match_frames / self.fps
-                match_avg_speed = match_distance / match_time if match_time > 0 else 0
-            else:
-                match_avg_speed = 0
-
-            region_stats["current_speed"] = round(current_speed, 2)
-            region_stats["rally_avg_speed"] = round(rally_avg_speed, 2)
-            region_stats["rally_max_speed"] = round(rally_max_speed, 2)
-            region_stats["rally_distance"] = round(rally_distance, 2)
-            region_stats["match_avg_speed"] = round(match_avg_speed, 2)
-            region_stats["match_max_speed"] = round(match_max_speed, 2)
-            region_stats["match_distance"] = round(match_distance, 2)
-            stats[region] = region_stats
-
+            stats[region] = self._compute_region_stats(region, history)
         return stats
 
+    def _compute_region_stats(self, region, history):
+        """Compute movement stats for one court region."""
+        region_stats = {
+            "current_speed": 0,
+            "rally_avg_speed": 0,
+            "rally_max_speed": 0,
+            "rally_distance": 0,
+            "match_avg_speed": 0,
+            "match_max_speed": 0,
+            "match_distance": 0,
+            "position_count": len(history),
+        }
+        if len(history) < 2:
+            return region_stats
+
+        rally_stats = self.rally_stats[region]
+        match_stats = self.match_stats[region]
+        region_stats["current_speed"] = round(self._sample_current_speed(region, history), 2)
+        region_stats["rally_avg_speed"] = round(self._average_speed(rally_stats), 2)
+        region_stats["rally_max_speed"] = round(rally_stats["max_speed"], 2)
+        region_stats["rally_distance"] = round(rally_stats["total_distance"], 2)
+        region_stats["match_avg_speed"] = round(self._average_speed(match_stats), 2)
+        region_stats["match_max_speed"] = round(match_stats["max_speed"], 2)
+        region_stats["match_distance"] = round(match_stats["total_distance"], 2)
+        return region_stats
+
+    def _sample_current_speed(self, region, history):
+        """Estimate current speed from recent positions and update rally/match stats."""
+        current_time = len(history) - 1
+        window_start = max(0, current_time - int(self.fps / 2))
+        sample_interval = 5
+
+        if current_time - window_start < sample_interval:
+            sample_points = [window_start, current_time]
+        else:
+            sample_points = list(range(window_start, current_time + 1, sample_interval))
+            if current_time not in sample_points:
+                sample_points.append(current_time)
+
+        half_second_total_distance = 0
+        valid_frames = 0
+        actual_time_span = 0
+        for i in range(len(sample_points) - 1):
+            idx1 = sample_points[i]
+            idx2 = sample_points[i + 1]
+            p1 = np.array(history[idx1])
+            p2 = np.array(history[idx2])
+            distance = np.linalg.norm(p2 - p1)
+            time_span = (idx2 - idx1) / self.fps
+            max_possible_distance = self.max_frame_distance * (idx2 - idx1)
+
+            if distance > 0.05 and distance < max_possible_distance:
+                half_second_total_distance += distance
+                valid_frames += 1
+                actual_time_span += time_span
+
+        current_speed = 0
+        if valid_frames > 0 and actual_time_span > 0:
+            current_speed = half_second_total_distance / actual_time_span
+            self._update_rally_and_match_stats(region, half_second_total_distance, current_speed)
+
+        return min(current_speed, 8.0)
+
+    def _average_speed(self, region_stats):
+        """Average speed over the accumulated frames of a stat bucket."""
+        frames = region_stats["total_frames"]
+        if frames > 1 and self.fps > 0:
+            elapsed = frames / self.fps
+            return region_stats["total_distance"] / elapsed if elapsed > 0 else 0
+        return 0
     def get_player_trajectories(self):
         return {region: list(history) for region, history in self.history.items()}
 

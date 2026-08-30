@@ -163,10 +163,7 @@ class ShuttlecockTracker:
 
         predicted = self._predict_next_position()
         predicted_distance = self._distance(point, predicted)
-        if predicted_distance > self.prediction_gate_pixels and strict_gate:
-            return True
-
-        return False
+        return predicted_distance > self.prediction_gate_pixels and strict_gate
 
     def _predict_next_position(self):
         if len(self.shuttlecock_trajectory) < 2:

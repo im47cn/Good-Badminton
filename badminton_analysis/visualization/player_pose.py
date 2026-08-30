@@ -119,17 +119,28 @@ class PlayerPoseVisualizer:
         return -margin <= x <= 6.1 + margin and -margin <= y <= 13.4 + margin
 
     def draw_players(self, frame, player_tracker, cached_movement_stats, stats_visualizer=None, rally_count=0):
-        if self.show_skeletons and self.current_pose_data is not None:
-            t0 = time.time()
-            self._draw_skeleton_on_frame(
-                frame,
-                self.current_pose_data["keypoints"],
-                self.current_pose_data["offset_x"],
-                self.current_pose_data["offset_y"],
-            )
-            if self.show_performance_stats:
-                print(f"Drawing skeleton took {time.time() - t0:.2f} sec")
+        self._draw_skeleton(frame)
+        self._draw_player_markers(frame, player_tracker)
+        if stats_visualizer is not None:
+            self._draw_stats(frame, stats_visualizer, cached_movement_stats, rally_count)
 
+    def _draw_skeleton(self, frame):
+        """Draw the current pose skeleton onto the frame."""
+        if not (self.show_skeletons and self.current_pose_data is not None):
+            return
+
+        t0 = time.time()
+        self._draw_skeleton_on_frame(
+            frame,
+            self.current_pose_data["keypoints"],
+            self.current_pose_data["offset_x"],
+            self.current_pose_data["offset_y"],
+        )
+        if self.show_performance_stats:
+            print(f"Drawing skeleton took {time.time() - t0:.2f} sec")
+
+    def _draw_player_markers(self, frame, player_tracker):
+        """Draw player position markers and their trajectories."""
         t0 = time.time()
         for position in ["upper", "lower"]:
             if player_tracker.players[position] is None:
@@ -149,12 +160,12 @@ class PlayerPoseVisualizer:
         if self.show_performance_stats:
             print(f"Drawing players and trajectories took {time.time() - t0:.2f} sec")
 
-        if stats_visualizer is not None:
-            t0 = time.time()
-            stats_visualizer.draw_player_stats(frame, cached_movement_stats, rally_count)
-            if self.show_performance_stats:
-                print(f"Drawing player stats took {time.time() - t0:.2f} sec")
-
+    def _draw_stats(self, frame, stats_visualizer, cached_movement_stats, rally_count):
+        """Draw player statistics overlay."""
+        t0 = time.time()
+        stats_visualizer.draw_player_stats(frame, cached_movement_stats, rally_count)
+        if self.show_performance_stats:
+            print(f"Drawing player stats took {time.time() - t0:.2f} sec")
     def _draw_skeleton_on_frame(self, frame, keypoints, offset_x, offset_y):
         for person in self._normalize_people(keypoints):
             person_arr = np.asarray(person)

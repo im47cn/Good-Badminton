@@ -580,81 +580,12 @@ class PlayerPositionVisualizer:
         # 如果提供了rally_id但不存在，则返回
         if rally_id is not None and rally_id not in self.movement_stats:
             return
-            
-        # 创建信息文本
+
         if rally_id is not None:
-            # 单个回合的统计信息
-            stats = self.movement_stats[rally_id]
-            info_text = f"回合 {rally_id} 统计:\n"
-            info_text += "---------------\n"
-            
-            # 上场球员统计
-            if 'upper' in stats:
-                upper_stats = stats['upper']
-                info_text += f"上场球员:\n"
-                info_text += f"  平均速度: {upper_stats['avg_speed']:.2f} 米/秒\n"
-                info_text += f"  最大速度: {upper_stats['max_speed']:.2f} 米/秒\n"
-                info_text += f"  移动距离: {upper_stats['total_distance']:.2f} 米\n"
-            
-            # 下场球员统计
-            if 'lower' in stats:
-                lower_stats = stats['lower']
-                info_text += f"\n下场球员:\n"
-                info_text += f"  平均速度: {lower_stats['avg_speed']:.2f} 米/秒\n"
-                info_text += f"  最大速度: {lower_stats['max_speed']:.2f} 米/秒\n"
-                info_text += f"  移动距离: {lower_stats['total_distance']:.2f} 米\n"
+            info_text = self._rally_stats_text(rally_id, self.movement_stats[rally_id])
         else:
-            # 整场比赛的统计信息
-            info_text = f"比赛统计\n"
-            info_text += "=================\n"
-            
-            # 计算所有回合的总统计数据
-            upper_distances = []
-            upper_speeds = []
-            upper_avg_speeds = []
-            lower_distances = []
-            lower_speeds = []
-            lower_avg_speeds = []
-            
-            for rally_stats in self.movement_stats.values():
-                if 'upper' in rally_stats:
-                    upper_distances.append(rally_stats['upper']['total_distance'])
-                    if rally_stats['upper'].get('max_speed', 0) > 0:
-                        upper_speeds.append(rally_stats['upper']['max_speed'])
-                    if rally_stats['upper'].get('avg_speed', 0) > 0:
-                        upper_avg_speeds.append(rally_stats['upper']['avg_speed'])
-                        
-                if 'lower' in rally_stats:
-                    lower_distances.append(rally_stats['lower']['total_distance'])
-                    if rally_stats['lower'].get('max_speed', 0) > 0:
-                        lower_speeds.append(rally_stats['lower']['max_speed'])
-                    if rally_stats['lower'].get('avg_speed', 0) > 0:
-                        lower_avg_speeds.append(rally_stats['lower']['avg_speed'])
-            
-            # 添加上场球员信息
-            info_text += f"上场球员:\n"
-            if upper_distances:
-                total_distance = sum(upper_distances)
-                info_text += f"  总移动距离: {total_distance:.2f} 米\n"
-                info_text += f"  平均每回合距离: {total_distance/len(upper_distances):.2f} 米\n"
-            if upper_avg_speeds:
-                avg_speed = sum(upper_avg_speeds) / len(upper_avg_speeds)
-                info_text += f"  平均速度: {avg_speed:.2f} 米/秒\n"
-            if upper_speeds:
-                info_text += f"  最大速度: {max(upper_speeds):.2f} 米/秒\n"
-            
-            # 添加下场球员信息
-            info_text += f"\n下场球员:\n"
-            if lower_distances:
-                total_distance = sum(lower_distances)
-                info_text += f"  总移动距离: {total_distance:.2f} 米\n"
-                info_text += f"  平均每回合距离: {total_distance/len(lower_distances):.2f} 米\n"
-            if lower_avg_speeds:
-                avg_speed = sum(lower_avg_speeds) / len(lower_avg_speeds)
-                info_text += f"  平均速度: {avg_speed:.2f} 米/秒\n"
-            if lower_speeds:
-                info_text += f"  最大速度: {max(lower_speeds):.2f} 米/秒\n"
-        
+            info_text = self._match_stats_text()
+
         # 在图表中心右侧添加文本框，适合深色背景
         plt.text(0.98, 0.5, info_text,
                 horizontalalignment='right',
@@ -666,80 +597,94 @@ class PlayerPositionVisualizer:
                 weight='bold',
                 color='#ffffff',
                 fontproperties=chinese_font)  # 白色文本适合深色背景
-    
+
+    def _rally_stats_text(self, rally_id, stats):
+        """生成单个回合的统计信息文本"""
+        info_text = f"回合 {rally_id} 统计:\n"
+        info_text += "---------------\n"
+
+        # 上场球员统计
+        if 'upper' in stats:
+            upper_stats = stats['upper']
+            info_text += f"上场球员:\n"
+            info_text += f"  平均速度: {upper_stats['avg_speed']:.2f} 米/秒\n"
+            info_text += f"  最大速度: {upper_stats['max_speed']:.2f} 米/秒\n"
+            info_text += f"  移动距离: {upper_stats['total_distance']:.2f} 米\n"
+
+        # 下场球员统计
+        if 'lower' in stats:
+            lower_stats = stats['lower']
+            info_text += f"\n下场球员:\n"
+            info_text += f"  平均速度: {lower_stats['avg_speed']:.2f} 米/秒\n"
+            info_text += f"  最大速度: {lower_stats['max_speed']:.2f} 米/秒\n"
+            info_text += f"  移动距离: {lower_stats['total_distance']:.2f} 米\n"
+        return info_text
+
+    def _match_stats_text(self):
+        """生成整场比赛的总统计信息文本"""
+        info_text = f"比赛统计\n"
+        info_text += "=================\n"
+
+        # 计算所有回合的总统计数据
+        upper_distances = []
+        upper_speeds = []
+        upper_avg_speeds = []
+        lower_distances = []
+        lower_speeds = []
+        lower_avg_speeds = []
+
+        for rally_stats in self.movement_stats.values():
+            if 'upper' in rally_stats:
+                upper_distances.append(rally_stats['upper']['total_distance'])
+                if rally_stats['upper'].get('max_speed', 0) > 0:
+                    upper_speeds.append(rally_stats['upper']['max_speed'])
+                if rally_stats['upper'].get('avg_speed', 0) > 0:
+                    upper_avg_speeds.append(rally_stats['upper']['avg_speed'])
+
+            if 'lower' in rally_stats:
+                lower_distances.append(rally_stats['lower']['total_distance'])
+                if rally_stats['lower'].get('max_speed', 0) > 0:
+                    lower_speeds.append(rally_stats['lower']['max_speed'])
+                if rally_stats['lower'].get('avg_speed', 0) > 0:
+                    lower_avg_speeds.append(rally_stats['lower']['avg_speed'])
+
+        # 添加上场球员信息
+        info_text += f"上场球员:\n"
+        if upper_distances:
+            total_distance = sum(upper_distances)
+            info_text += f"  总移动距离: {total_distance:.2f} 米\n"
+            info_text += f"  平均每回合距离: {total_distance/len(upper_distances):.2f} 米\n"
+        if upper_avg_speeds:
+            avg_speed = sum(upper_avg_speeds) / len(upper_avg_speeds)
+            info_text += f"  平均速度: {avg_speed:.2f} 米/秒\n"
+        if upper_speeds:
+            info_text += f"  最大速度: {max(upper_speeds):.2f} 米/秒\n"
+
+        # 添加下场球员信息
+        info_text += f"\n下场球员:\n"
+        if lower_distances:
+            total_distance = sum(lower_distances)
+            info_text += f"  总移动距离: {total_distance:.2f} 米\n"
+            info_text += f"  平均每回合距离: {total_distance/len(lower_distances):.2f} 米\n"
+        if lower_avg_speeds:
+            avg_speed = sum(lower_avg_speeds) / len(lower_avg_speeds)
+            info_text += f"  平均速度: {avg_speed:.2f} 米/秒\n"
+        if lower_speeds:
+            info_text += f"  最大速度: {max(lower_speeds):.2f} 米/秒\n"
+        return info_text
     def _generate_scatter_plot(self, upper_df, lower_df, filename):
         """Generate scatter plot"""
         plt.figure(figsize=(10, 16), facecolor='#1a1a1a')  # 设置深色背景
-        
+
         # Create court background
         self._draw_court()
-        
-        # Draw scatter plot for upper court
-        if not upper_df.empty:
-            # Check if rally information is available
-            if 'rally_id' in upper_df.columns:
-                # Group by rally and plot with different colors
-                for rally_id, rally_data in upper_df.groupby('rally_id'):
-                    plt.scatter(
-                        rally_data['court_x'], 
-                        rally_data['court_y'],
-                        alpha=0.7,
-                        s=30,
-                        marker='o',  # circle marker
-                        color=self.upper_color,
-                        label=f'上场球员 回合 {int(rally_id)}' if rally_id == upper_df['rally_id'].iloc[0] else "_nolegend_"
-                    )
-            else:
-                plt.scatter(
-                    upper_df['court_x'], 
-                    upper_df['court_y'],
-                    alpha=0.7,
-                    s=30,
-                    marker='o',
-                    color=self.upper_color,
-                    label='上场球员'
-                )
-            
-        # Draw scatter plot for lower court
-        if not lower_df.empty:
-            # Check if rally information is available
-            if 'rally_id' in lower_df.columns:
-                # Group by rally and plot with different colors
-                for rally_id, rally_data in lower_df.groupby('rally_id'):
-                    plt.scatter(
-                        rally_data['court_x'], 
-                        rally_data['court_y'],
-                        alpha=0.7,
-                        s=30,
-                        marker='^',  # triangle marker
-                        color=self.lower_color,
-                        label=f'下场球员 回合 {int(rally_id)}' if rally_id == lower_df['rally_id'].iloc[0] else "_nolegend_"
-                    )
-            else:
-                plt.scatter(
-                    lower_df['court_x'], 
-                    lower_df['court_y'],
-                    alpha=0.7,
-                    s=30,
-                    marker='^',  # triangle marker
-                    color=self.lower_color,
-                    label='下场球员'
-                )
-        
+
+        self._draw_scatter_series(upper_df, self.upper_color, 'o', '上场球员')
+        self._draw_scatter_series(lower_df, self.lower_color, '^', '下场球员')
+
         # 添加统计信息
-        rally_id = None
-        if 'rally_id' in upper_df.columns:
-            rally_ids = upper_df['rally_id'].unique()
-            if len(rally_ids) == 1 and rally_ids[0] != 0:
-                rally_id = int(rally_ids[0])
-        
-        # 显示单个回合的统计或者整体统计
-        if rally_id and rally_id in self.movement_stats:
-            self._add_stats_to_plot(rally_id)
-        else:
-            # 如果是整场比赛数据，显示所有回合的总统计
-            self._add_stats_to_plot(None)
-        
+        self._add_plot_stats(upper_df)
+
         # Set plot properties - 适合深色背景的样式
         plt.xlim(0, self.court_width)
         plt.ylim(self.court_length, 0)  # Invert Y axis for correct orientation
@@ -754,14 +699,57 @@ class PlayerPositionVisualizer:
             labelcolor='white',
             prop=chinese_font,
         )
-        
+
         # Save plot
         save_path = os.path.join(self.output_dir, 'scatter_plots', filename)
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close()
-        
+
         print(f"散点图已保存至: {save_path}")
-    
+
+    def _draw_scatter_series(self, df, color, marker, label_prefix):
+        """绘制一个球员区域的散点，有回合信息时按回合着色"""
+        if df.empty:
+            return
+
+        # Check if rally information is available
+        if 'rally_id' in df.columns:
+            # Group by rally and plot with different colors
+            for rally_id, rally_data in df.groupby('rally_id'):
+                plt.scatter(
+                    rally_data['court_x'],
+                    rally_data['court_y'],
+                    alpha=0.7,
+                    s=30,
+                    marker=marker,
+                    color=color,
+                    label=f'{label_prefix} 回合 {int(rally_id)}' if rally_id == df['rally_id'].iloc[0] else "_nolegend_"
+                )
+        else:
+            plt.scatter(
+                df['court_x'],
+                df['court_y'],
+                alpha=0.7,
+                s=30,
+                marker=marker,
+                color=color,
+                label=label_prefix
+            )
+
+    def _add_plot_stats(self, upper_df):
+        """在图上叠加单回合或整场比赛的统计信息"""
+        rally_id = None
+        if 'rally_id' in upper_df.columns:
+            rally_ids = upper_df['rally_id'].unique()
+            if len(rally_ids) == 1 and rally_ids[0] != 0:
+                rally_id = int(rally_ids[0])
+
+        # 显示单个回合的统计或者整体统计
+        if rally_id and rally_id in self.movement_stats:
+            self._add_stats_to_plot(rally_id)
+        else:
+            # 如果是整场比赛数据，显示所有回合的总统计
+            self._add_stats_to_plot(None)
     def visualize(self):
         """Execute visualization processing"""
         if self.df.empty:
@@ -812,47 +800,44 @@ def analyze_player_positions(detections_path, output_dir=None, fps=30):
 if __name__ == "__main__":
     import sys
     from tkinter import Tk, filedialog
-    
+
     # Use file dialog to select detection file
     print("请选择 detections.jsonl 文件...")
-    
+
     try:
         # Create hidden tkinter root window (for file dialog only)
         root = Tk()
         root.withdraw()
-        
+
         # Set default directory
         default_dir = "outputs"
         if not os.path.exists(default_dir):
             default_dir = os.getcwd()
-        
+
         # Open file selection dialog
         file_path = filedialog.askopenfilename(
             title="选择球员位置检测文件",
             filetypes=[("JSONL文件", "*.jsonl"), ("所有文件", "*.*")],
             initialdir=default_dir
         )
-        
+
         # 如果用户取消选择，则退出
         if not file_path:
             print("未选择文件，退出程序")
             sys.exit(0)
-            
-        # 调用分析函数
-        success = analyze_player_positions(file_path)
-        
-        if success:
+
+        if success := analyze_player_positions(file_path):
             print("\n可视化测试成功完成")
         else:
             print("\n可视化测试失败")
-            
+
     except Exception as e:
         print(f"\n测试错误: {e}")
-        
+
     finally:
         try:
             # 关闭tkinter窗口
             root.destroy()
-        except:
+        except BaseException:
             pass
         

@@ -1,4 +1,4 @@
-﻿import os
+import os
 import tempfile
 from tkinter import filedialog
 import tkinter as tk
@@ -262,34 +262,10 @@ class BadmintonAnalysisSystem:
         write_json(self.metadata_path, metadata)
 
     def _process_frame(self, frame, template_gray, corners, roi_corners, frame_count, out, detect_frame_count):
-
+        """Process one frame: track rally state, detect objects, draw overlays and write the output."""
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        # frame = self.draw_court_roi(frame, corners, roi_corners)
-
         is_court = self.is_court_view(gray_frame, template_gray)
-        
-        if is_court:
-            self.is_court_view_count += 1
-            self.consecutive_non_court_frames = 0
-        else:
-            self.consecutive_non_court_frames += 1
-            self.is_court_view_count = 0
-            
-
-        if self.is_court_view_count >= self.court_view_frames_threshold and not self.rally_active:
-            self.rally_active = True
-
-            self.rally_count += 1
-
-            self.player_tracker.start_new_rally()
-            
-
-        if self.consecutive_non_court_frames >= self.non_court_frames_threshold and self.rally_active:
-            self.rally_active = False
-
-            self.shuttlecock_tracker.clear_trajectory()
-
+        self._update_rally_state(is_court)
 
         if not is_court:
             return frame, detect_frame_count
@@ -303,35 +279,11 @@ class BadmintonAnalysisSystem:
             cv2.rectangle(frame, roi_corners[0], roi_corners[1], (255, 0, 0), 2)
             cv2.putText(frame, "Pose ROI", (x1, max(24, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2, cv2.LINE_AA)
 
-
-        pose_t0 = time.time()
-        centroids, point_left_hands, point_right_hands = self.player_pose_visualizer.detect_players(roi, x1, y1)
-        pose_elapsed = time.time() - pose_t0
-
-        ball_t0 = time.time()
-        detected_ball_position = self.shuttlecock_tracker.detect_ball(frame, roi_corners=roi_corners)
-        ball_elapsed = time.time() - ball_t0
-        ball_position = self.shuttlecock_tracker.update_trajectory(detected_ball_position, roi_corners)
-        
-
-        shuttle_draw_t0 = time.time()
-        self.shuttlecock_tracker.handle_visualization(frame)
-        shuttle_draw_elapsed = time.time() - shuttle_draw_t0
-        
-
-        players = self.player_tracker.update(frame_count, centroids, ball_position, 
-                                             point_left_hands, point_right_hands, detect_frame_count)
-        
-
-        if frame_count == 1 or not self.cached_movement_stats:
-            self.cached_movement_stats = self.player_tracker.get_player_movement_stats()
-            self.stats_update_interval_frames = int(self.player_tracker.fps * 0.5)
-
-        if frame_count - self.last_stats_update_frame >= self.stats_update_interval_frames:
-
-            self.cached_movement_stats = self.player_tracker.get_player_movement_stats()
-            self.last_stats_update_frame = frame_count
-
+        (centroids, point_left_hands, point_right_hands,
+         ball_position, pose_elapsed, ball_elapsed, shuttle_draw_elapsed) = self._detect_objects(frame, roi, roi_corners, x1, y1)
+        self.player_tracker.update(frame_count, centroids, ball_position,
+                                   point_left_hands, point_right_hands, detect_frame_count)
+        self._refresh_movement_stats(frame_count)
 
         should_log_performance = (
             self.show_performance_stats
@@ -339,25 +291,7 @@ class BadmintonAnalysisSystem:
             and frame_count % self.performance_log_interval_frames == 0
         )
 
-        t0 = time.time()
-
-        self.player_pose_visualizer.draw_players(
-            frame=frame, 
-            player_tracker=self.player_tracker, 
-            cached_movement_stats=self.cached_movement_stats,
-            stats_visualizer=self.stats_visualizer if self.show_player_stats else None,
-            rally_count=self.rally_count
-        )
-        t1 = time.time()
-        players_draw_elapsed = t1 - t0
-        
-
-        court_draw_elapsed = 0.0
-        if self.show_court_trajectory:
-            t0 = time.time()
-            frame = self.court_trajectory_visualizer.draw_overlay(frame, self.player_tracker.court_history)
-            t1 = time.time()
-            court_draw_elapsed = t1 - t0
+        frame, players_draw_elapsed, court_draw_elapsed = self._draw_overlays(frame)
 
         if should_log_performance:
             print(
@@ -367,18 +301,87 @@ class BadmintonAnalysisSystem:
                 f"players draw {players_draw_elapsed:.2f}s, "
                 f"court draw {court_draw_elapsed:.2f}s"
             )
-        
 
-        if frame is not None:
-            if self.show_display:
-                cv2.imshow('frame', frame)
-                cv2.waitKey(1)
-            out.write(frame)
-
-            if self.save_images:
-                cv2.imwrite(os.path.join(self.images_save_dir, f"{frame_count}.png"), frame)
+        self._output_frame(frame, out, frame_count)
         return frame, detect_frame_count
 
+    def _update_rally_state(self, is_court):
+        """Track court-view persistence and start/stop rallies."""
+        if is_court:
+            self.is_court_view_count += 1
+            self.consecutive_non_court_frames = 0
+        else:
+            self.consecutive_non_court_frames += 1
+            self.is_court_view_count = 0
+
+        if self.is_court_view_count >= self.court_view_frames_threshold and not self.rally_active:
+            self.rally_active = True
+            self.rally_count += 1
+            self.player_tracker.start_new_rally()
+
+        if self.consecutive_non_court_frames >= self.non_court_frames_threshold and self.rally_active:
+            self.rally_active = False
+            self.shuttlecock_tracker.clear_trajectory()
+
+    def _detect_objects(self, frame, roi, roi_corners, x1, y1):
+        """Detect players and shuttlecock in the current frame."""
+        pose_t0 = time.time()
+        centroids, point_left_hands, point_right_hands = self.player_pose_visualizer.detect_players(roi, x1, y1)
+        pose_elapsed = time.time() - pose_t0
+
+        ball_t0 = time.time()
+        detected_ball_position = self.shuttlecock_tracker.detect_ball(frame, roi_corners=roi_corners)
+        ball_elapsed = time.time() - ball_t0
+        ball_position = self.shuttlecock_tracker.update_trajectory(detected_ball_position, roi_corners)
+
+        shuttle_draw_t0 = time.time()
+        self.shuttlecock_tracker.handle_visualization(frame)
+        shuttle_draw_elapsed = time.time() - shuttle_draw_t0
+
+        return (centroids, point_left_hands, point_right_hands,
+                ball_position, pose_elapsed, ball_elapsed, shuttle_draw_elapsed)
+
+    def _refresh_movement_stats(self, frame_count):
+        """Refresh cached per-player movement stats on the first frame and on interval."""
+        if frame_count == 1 or not self.cached_movement_stats:
+            self.cached_movement_stats = self.player_tracker.get_player_movement_stats()
+            self.stats_update_interval_frames = int(self.player_tracker.fps * 0.5)
+
+        if frame_count - self.last_stats_update_frame >= self.stats_update_interval_frames:
+            self.cached_movement_stats = self.player_tracker.get_player_movement_stats()
+            self.last_stats_update_frame = frame_count
+
+    def _draw_overlays(self, frame):
+        """Draw player and court trajectory overlays onto the frame."""
+        t0 = time.time()
+        self.player_pose_visualizer.draw_players(
+            frame=frame,
+            player_tracker=self.player_tracker,
+            cached_movement_stats=self.cached_movement_stats,
+            stats_visualizer=self.stats_visualizer if self.show_player_stats else None,
+            rally_count=self.rally_count
+        )
+        players_draw_elapsed = time.time() - t0
+
+        court_draw_elapsed = 0.0
+        if self.show_court_trajectory:
+            t0 = time.time()
+            frame = self.court_trajectory_visualizer.draw_overlay(frame, self.player_tracker.court_history)
+            court_draw_elapsed = time.time() - t0
+
+        return frame, players_draw_elapsed, court_draw_elapsed
+
+    def _output_frame(self, frame, out, frame_count):
+        """Display, write and optionally save the processed frame."""
+        if frame is None:
+            return
+        if self.show_display:
+            cv2.imshow('frame', frame)
+            cv2.waitKey(1)
+        out.write(frame)
+
+        if self.save_images:
+            cv2.imwrite(os.path.join(self.images_save_dir, f"{frame_count}.png"), frame)
     def _get_template_path(self):
         """Get the court template image path."""
         if self.template_path:
