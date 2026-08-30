@@ -78,10 +78,7 @@ class StatsVisualizer:
             "C:/Windows/Fonts/simkai.ttf",
             "C:/Windows/Fonts/msyh.ttc",
         ]
-        for path in font_paths:
-            if os.path.exists(path):
-                return path
-        return None
+        return next((path for path in font_paths if os.path.exists(path)), None)
 
     def _get_font(self, font_scale):
         font_size = max(8, int(font_scale * 30))

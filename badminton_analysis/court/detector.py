@@ -172,8 +172,11 @@ def build_court_line_mask(image):
     count, labels, stats, _centroids = cv2.connectedComponentsWithStats(green_mask)
     if count > 1:
         image_area = image.shape[0] * image.shape[1]
-        candidates = [idx for idx in range(1, count) if stats[idx, cv2.CC_STAT_AREA] > image_area * 0.08]
-        if candidates:
+        if candidates := [
+            idx
+            for idx in range(1, count)
+            if stats[idx, cv2.CC_STAT_AREA] > image_area * 0.08
+        ]:
             court_idx = max(candidates, key=lambda idx: stats[idx, cv2.CC_STAT_AREA])
             green_mask = ((labels == court_idx).astype(np.uint8)) * 255
 
@@ -241,19 +244,26 @@ def detect_court_line_segments(image):
 
 
 def _score_court_quad(corners, image_shape, lines, line_mask, horizontal_lines):
+    if not _is_plausible_court_quad(corners, image_shape):
+        return None
+    return _compute_court_quad_score(corners, image_shape, lines, line_mask, horizontal_lines)
+
+
+def _is_plausible_court_quad(corners, image_shape):
+    """Return True if the quad could be a court view from this angle."""
     height, width = image_shape[:2]
     top_left, top_right, bottom_right, bottom_left = corners
     points = np.array(corners, dtype=np.float32)
 
     if not all(_inside_image(point, width, height, margin=8) for point in points):
-        return None
+        return False
     if not _is_convex_quad(points):
-        return None
+        return False
 
     area = _polygon_area(points)
     image_area = width * height
     if area < image_area * 0.12:
-        return None
+        return False
 
     top_width = float(np.linalg.norm(top_right - top_left))
     bottom_width = float(np.linalg.norm(bottom_right - bottom_left))
@@ -261,22 +271,22 @@ def _score_court_quad(corners, image_shape, lines, line_mask, horizontal_lines):
     right_height = float(np.linalg.norm(bottom_right - top_right))
     avg_height = (left_height + right_height) / 2.0
     if min(top_width, bottom_width, avg_height) <= 1:
-        return None
+        return False
     if avg_height < height * 0.34:
-        return None
+        return False
     if bottom_width < top_width * 0.82:
-        return None
+        return False
 
     center = np.mean(points, axis=0)
     top_y = (top_left[1] + top_right[1]) / 2.0
     bottom_y = (bottom_left[1] + bottom_right[1]) / 2.0
     width_ratio = top_width / bottom_width
     if not (width * 0.42 <= center[0] <= width * 0.76 and height * 0.58 <= center[1] <= height * 0.86):
-        return None
+        return False
     if top_y < height * 0.30 or bottom_y < height * 0.74:
-        return None
+        return False
     if not (0.45 <= width_ratio <= 0.86):
-        return None
+        return False
 
     min_edge_distance = min(
         np.min(points[:, 0]),
@@ -286,14 +296,37 @@ def _score_court_quad(corners, image_shape, lines, line_mask, horizontal_lines):
     )
     edge_limit = max(10, min(width, height) * 0.02)
     if min_edge_distance < edge_limit:
-        return None
+        return False
 
     left_dx = bottom_left[0] - top_left[0]
     right_dx = bottom_right[0] - top_right[0]
-    if left_dx > width * 0.16 or right_dx < -width * 0.16:
-        return None
+    return left_dx <= width * 0.16 and right_dx >= -width * 0.16
 
+
+def _compute_court_quad_score(corners, image_shape, lines, line_mask, horizontal_lines):
+    """Score a court quad: higher is more plausible."""
+    height, width = image_shape[:2]
+    top_left, top_right, bottom_right, bottom_left = corners
+    points = np.array(corners, dtype=np.float32)
     top_line, bottom_line, left_line, right_line = lines
+
+    area = _polygon_area(points)
+    image_area = width * height
+    top_width = float(np.linalg.norm(top_right - top_left))
+    bottom_width = float(np.linalg.norm(bottom_right - bottom_left))
+    left_height = float(np.linalg.norm(bottom_left - top_left))
+    right_height = float(np.linalg.norm(bottom_right - top_right))
+    avg_height = (left_height + right_height) / 2.0
+    center = np.mean(points, axis=0)
+    bottom_y = (bottom_left[1] + bottom_right[1]) / 2.0
+    width_ratio = top_width / bottom_width
+    min_edge_distance = min(
+        np.min(points[:, 0]),
+        width - 1 - np.max(points[:, 0]),
+        np.min(points[:, 1]),
+        height - 1 - np.max(points[:, 1]),
+    )
+
     area_score = min(area / (image_area * 0.42), 1.0) * 44
     height_score = min(avg_height / (height * 0.62), 1.0) * 22
     perspective_score = (1.0 - min(abs(width_ratio - 0.66) / 0.22, 1.0)) * 16
@@ -319,18 +352,10 @@ def _score_court_quad(corners, image_shape, lines, line_mask, horizontal_lines):
     pattern_score = _badminton_horizontal_pattern_score(corners, horizontal_lines, image_shape) * 110
     return area_score + height_score + perspective_score + center_x_score + center_y_score + bottom_score + edge_score + line_score + support_score + alignment_score + pattern_score
 
-
-def auto_detect_court_corners(image):
-    horizontal_lines, side_lines, mask = detect_court_line_segments(image)
-    debug = {"horizontal": horizontal_lines, "side": side_lines, "score": None}
-    if len(horizontal_lines) < 2 or len(side_lines) < 2:
-        return None, mask, debug
-
-    height, width = image.shape[:2]
+def _find_best_court_quad(horizontals, sides, image_shape, mask, horizontal_lines):
+    """Search every combination of horizontal/side lines for the best-scoring quad."""
+    height, width = image_shape[:2]
     best = None
-    horizontals = sorted(horizontal_lines, key=lambda item: item["mid"][1])
-    sides = sorted(side_lines, key=lambda item: item["mid"][0])
-
     for top_idx, top_line in enumerate(horizontals):
         for bottom_line in horizontals[top_idx + 1:]:
             if bottom_line["mid"][1] - top_line["mid"][1] < height * 0.28:
@@ -349,11 +374,23 @@ def auto_detect_court_corners(image):
                     if any(point is None for point in intersections):
                         continue
 
-                    score = _score_court_quad(intersections, image.shape, (top_line, bottom_line, left_line, right_line), mask, horizontal_lines)
+                    score = _score_court_quad(intersections, image_shape, (top_line, bottom_line, left_line, right_line), mask, horizontal_lines)
                     if score is None:
                         continue
                     if best is None or score > best["score"]:
                         best = {"corners": intersections, "score": score, "lines": (top_line, bottom_line, left_line, right_line)}
+    return best
+
+
+def auto_detect_court_corners(image):
+    horizontal_lines, side_lines, mask = detect_court_line_segments(image)
+    debug = {"horizontal": horizontal_lines, "side": side_lines, "score": None}
+    if len(horizontal_lines) < 2 or len(side_lines) < 2:
+        return None, mask, debug
+
+    horizontals = sorted(horizontal_lines, key=lambda item: item["mid"][1])
+    sides = sorted(side_lines, key=lambda item: item["mid"][0])
+    best = _find_best_court_quad(horizontals, sides, image.shape, mask, horizontal_lines)
 
     if best is None:
         return None, mask, debug
@@ -372,8 +409,6 @@ def auto_detect_court_corners(image):
     debug["score"] = best["score"]
     corners = [(int(round(point[0])), int(round(point[1]))) for point in corners_float]
     return corners, mask, debug
-
-
 def render_auto_court_preview(image, corners, roi_corners=None, debug=None):
     preview = image.copy()
     if debug:

@@ -557,81 +557,12 @@ class PlayerPositionVisualizer:
         # 如果提供了rally_id但不存在，则返回
         if rally_id is not None and rally_id not in self.movement_stats:
             return
-            
-        # 创建信息文本
+
         if rally_id is not None:
-            # 单个回合的统计信息
-            stats = self.movement_stats[rally_id]
-            info_text = f"Rally {rally_id} Statistics:\n"
-            info_text += "---------------\n"
-            
-            # 上场球员统计
-            if 'upper' in stats:
-                upper_stats = stats['upper']
-                info_text += f"Upper Court Player:\n"
-                info_text += f"  Average Speed: {upper_stats['avg_speed']:.2f} m/s\n"
-                info_text += f"  Maximum Speed: {upper_stats['max_speed']:.2f} m/s\n"
-                info_text += f"  Distance Moved: {upper_stats['total_distance']:.2f} m\n"
-            
-            # 下场球员统计
-            if 'lower' in stats:
-                lower_stats = stats['lower']
-                info_text += f"\nLower Court Player:\n"
-                info_text += f"  Average Speed: {lower_stats['avg_speed']:.2f} m/s\n"
-                info_text += f"  Maximum Speed: {lower_stats['max_speed']:.2f} m/s\n"
-                info_text += f"  Distance Moved: {lower_stats['total_distance']:.2f} m\n"
+            info_text = self._rally_stats_text(rally_id, self.movement_stats[rally_id])
         else:
-            # 整场比赛的统计信息
-            info_text = f"Match Statistics\n"
-            info_text += "=================\n"
-            
-            # 计算所有回合的总统计数据
-            upper_distances = []
-            upper_speeds = []
-            upper_avg_speeds = []
-            lower_distances = []
-            lower_speeds = []
-            lower_avg_speeds = []
-            
-            for rally_stats in self.movement_stats.values():
-                if 'upper' in rally_stats:
-                    upper_distances.append(rally_stats['upper']['total_distance'])
-                    if rally_stats['upper'].get('max_speed', 0) > 0:
-                        upper_speeds.append(rally_stats['upper']['max_speed'])
-                    if rally_stats['upper'].get('avg_speed', 0) > 0:
-                        upper_avg_speeds.append(rally_stats['upper']['avg_speed'])
-                        
-                if 'lower' in rally_stats:
-                    lower_distances.append(rally_stats['lower']['total_distance'])
-                    if rally_stats['lower'].get('max_speed', 0) > 0:
-                        lower_speeds.append(rally_stats['lower']['max_speed'])
-                    if rally_stats['lower'].get('avg_speed', 0) > 0:
-                        lower_avg_speeds.append(rally_stats['lower']['avg_speed'])
-            
-            # 添加上场球员信息
-            info_text += f"Upper Court Player:\n"
-            if upper_distances:
-                total_distance = sum(upper_distances)
-                info_text += f"  Total Distance: {total_distance:.2f} m\n"
-                info_text += f"  Average Distance per Rally: {total_distance/len(upper_distances):.2f} m\n"
-            if upper_avg_speeds:
-                avg_speed = sum(upper_avg_speeds) / len(upper_avg_speeds)
-                info_text += f"  Average Speed: {avg_speed:.2f} m/s\n"
-            if upper_speeds:
-                info_text += f"  Maximum Speed: {max(upper_speeds):.2f} m/s\n"
-            
-            # 添加下场球员信息
-            info_text += f"\nLower Court Player:\n"
-            if lower_distances:
-                total_distance = sum(lower_distances)
-                info_text += f"  Total Distance: {total_distance:.2f} m\n"
-                info_text += f"  Average Distance per Rally: {total_distance/len(lower_distances):.2f} m\n"
-            if lower_avg_speeds:
-                avg_speed = sum(lower_avg_speeds) / len(lower_avg_speeds)
-                info_text += f"  Average Speed: {avg_speed:.2f} m/s\n"
-            if lower_speeds:
-                info_text += f"  Maximum Speed: {max(lower_speeds):.2f} m/s\n"
-        
+            info_text = self._match_stats_text()
+
         # 在图表中心右侧添加文本框，适合深色背景
         plt.text(0.98, 0.5, info_text,
                 horizontalalignment='right',
@@ -642,80 +573,94 @@ class PlayerPositionVisualizer:
                 family='monospace',
                 weight='bold',
                 color='#ffffff')  # 白色文本适合深色背景
-    
+
+    def _rally_stats_text(self, rally_id, stats):
+        """Build the statistics text for a single rally."""
+        info_text = f"Rally {rally_id} Statistics:\n"
+        info_text += "---------------\n"
+
+        # 上场球员统计
+        if 'upper' in stats:
+            upper_stats = stats['upper']
+            info_text += f"Upper Court Player:\n"
+            info_text += f"  Average Speed: {upper_stats['avg_speed']:.2f} m/s\n"
+            info_text += f"  Maximum Speed: {upper_stats['max_speed']:.2f} m/s\n"
+            info_text += f"  Distance Moved: {upper_stats['total_distance']:.2f} m\n"
+
+        # 下场球员统计
+        if 'lower' in stats:
+            lower_stats = stats['lower']
+            info_text += f"\nLower Court Player:\n"
+            info_text += f"  Average Speed: {lower_stats['avg_speed']:.2f} m/s\n"
+            info_text += f"  Maximum Speed: {lower_stats['max_speed']:.2f} m/s\n"
+            info_text += f"  Distance Moved: {lower_stats['total_distance']:.2f} m\n"
+        return info_text
+
+    def _match_stats_text(self):
+        """Build the aggregate statistics text across all rallies."""
+        info_text = f"Match Statistics\n"
+        info_text += "=================\n"
+
+        # 计算所有回合的总统计数据
+        upper_distances = []
+        upper_speeds = []
+        upper_avg_speeds = []
+        lower_distances = []
+        lower_speeds = []
+        lower_avg_speeds = []
+
+        for rally_stats in self.movement_stats.values():
+            if 'upper' in rally_stats:
+                upper_distances.append(rally_stats['upper']['total_distance'])
+                if rally_stats['upper'].get('max_speed', 0) > 0:
+                    upper_speeds.append(rally_stats['upper']['max_speed'])
+                if rally_stats['upper'].get('avg_speed', 0) > 0:
+                    upper_avg_speeds.append(rally_stats['upper']['avg_speed'])
+
+            if 'lower' in rally_stats:
+                lower_distances.append(rally_stats['lower']['total_distance'])
+                if rally_stats['lower'].get('max_speed', 0) > 0:
+                    lower_speeds.append(rally_stats['lower']['max_speed'])
+                if rally_stats['lower'].get('avg_speed', 0) > 0:
+                    lower_avg_speeds.append(rally_stats['lower']['avg_speed'])
+
+        # 添加上场球员信息
+        info_text += f"Upper Court Player:\n"
+        if upper_distances:
+            total_distance = sum(upper_distances)
+            info_text += f"  Total Distance: {total_distance:.2f} m\n"
+            info_text += f"  Average Distance per Rally: {total_distance/len(upper_distances):.2f} m\n"
+        if upper_avg_speeds:
+            avg_speed = sum(upper_avg_speeds) / len(upper_avg_speeds)
+            info_text += f"  Average Speed: {avg_speed:.2f} m/s\n"
+        if upper_speeds:
+            info_text += f"  Maximum Speed: {max(upper_speeds):.2f} m/s\n"
+
+        # 添加下场球员信息
+        info_text += f"\nLower Court Player:\n"
+        if lower_distances:
+            total_distance = sum(lower_distances)
+            info_text += f"  Total Distance: {total_distance:.2f} m\n"
+            info_text += f"  Average Distance per Rally: {total_distance/len(lower_distances):.2f} m\n"
+        if lower_avg_speeds:
+            avg_speed = sum(lower_avg_speeds) / len(lower_avg_speeds)
+            info_text += f"  Average Speed: {avg_speed:.2f} m/s\n"
+        if lower_speeds:
+            info_text += f"  Maximum Speed: {max(lower_speeds):.2f} m/s\n"
+        return info_text
     def _generate_scatter_plot(self, upper_df, lower_df, filename):
         """Generate scatter plot"""
         plt.figure(figsize=(10, 16), facecolor='#1a1a1a')  # 设置深色背景
-        
+
         # Create court background
         self._draw_court()
-        
-        # Draw scatter plot for upper court
-        if not upper_df.empty:
-            # Check if rally information is available
-            if 'rally_id' in upper_df.columns:
-                # Group by rally and plot with different colors
-                for rally_id, rally_data in upper_df.groupby('rally_id'):
-                    plt.scatter(
-                        rally_data['court_x'], 
-                        rally_data['court_y'],
-                        alpha=0.7,
-                        s=30,
-                        marker='o',  # circle marker
-                        color=self.upper_color,
-                        label=f'Upper Court Rally {int(rally_id)}' if rally_id == upper_df['rally_id'].iloc[0] else "_nolegend_"
-                    )
-            else:
-                plt.scatter(
-                    upper_df['court_x'], 
-                    upper_df['court_y'],
-                    alpha=0.7,
-                    s=30,
-                    marker='o',
-                    color=self.upper_color,
-                    label='Upper Court Players'
-                )
-            
-        # Draw scatter plot for lower court
-        if not lower_df.empty:
-            # Check if rally information is available
-            if 'rally_id' in lower_df.columns:
-                # Group by rally and plot with different colors
-                for rally_id, rally_data in lower_df.groupby('rally_id'):
-                    plt.scatter(
-                        rally_data['court_x'], 
-                        rally_data['court_y'],
-                        alpha=0.7,
-                        s=30,
-                        marker='^',  # triangle marker
-                        color=self.lower_color,
-                        label=f'Lower Court Rally {int(rally_id)}' if rally_id == lower_df['rally_id'].iloc[0] else "_nolegend_"
-                    )
-            else:
-                plt.scatter(
-                    lower_df['court_x'], 
-                    lower_df['court_y'],
-                    alpha=0.7,
-                    s=30,
-                    marker='^',  # triangle marker
-                    color=self.lower_color,
-                    label='Lower Court Players'
-                )
-        
+
+        self._draw_scatter_series(upper_df, self.upper_color, 'o', 'Upper Court')
+        self._draw_scatter_series(lower_df, self.lower_color, '^', 'Lower Court')
+
         # 添加统计信息
-        rally_id = None
-        if 'rally_id' in upper_df.columns:
-            rally_ids = upper_df['rally_id'].unique()
-            if len(rally_ids) == 1 and rally_ids[0] != 0:
-                rally_id = int(rally_ids[0])
-        
-        # 显示单个回合的统计或者整体统计
-        if rally_id and rally_id in self.movement_stats:
-            self._add_stats_to_plot(rally_id)
-        else:
-            # 如果是整场比赛数据，显示所有回合的总统计
-            self._add_stats_to_plot(None)
-        
+        self._add_plot_stats(upper_df)
+
         # Set plot properties - 适合深色背景的样式
         plt.xlim(0, self.court_width)
         plt.ylim(self.court_length, 0)  # Invert Y axis for correct orientation
@@ -724,14 +669,57 @@ class PlayerPositionVisualizer:
         plt.ylabel('Court Length (meters)', color='white')
         plt.tick_params(colors='white')  # 坐标轴刻度标签改为白色
         plt.legend(loc='upper right', facecolor='#333333', edgecolor='#666666', labelcolor='white')
-        
+
         # Save plot
         save_path = os.path.join(self.output_dir, 'scatter_plots', filename)
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close()
-        
+
         print(f"Scatter plot saved to: {save_path}")
-    
+
+    def _draw_scatter_series(self, df, color, marker, label_prefix):
+        """Draw one player region's scatter points, colored per rally when available."""
+        if df.empty:
+            return
+
+        # Check if rally information is available
+        if 'rally_id' in df.columns:
+            # Group by rally and plot with different colors
+            for rally_id, rally_data in df.groupby('rally_id'):
+                plt.scatter(
+                    rally_data['court_x'],
+                    rally_data['court_y'],
+                    alpha=0.7,
+                    s=30,
+                    marker=marker,
+                    color=color,
+                    label=f'{label_prefix} Rally {int(rally_id)}' if rally_id == df['rally_id'].iloc[0] else "_nolegend_"
+                )
+        else:
+            plt.scatter(
+                df['court_x'],
+                df['court_y'],
+                alpha=0.7,
+                s=30,
+                marker=marker,
+                color=color,
+                label=f'{label_prefix} Players'
+            )
+
+    def _add_plot_stats(self, upper_df):
+        """Overlay single-rally or match statistics text on the plot."""
+        rally_id = None
+        if 'rally_id' in upper_df.columns:
+            rally_ids = upper_df['rally_id'].unique()
+            if len(rally_ids) == 1 and rally_ids[0] != 0:
+                rally_id = int(rally_ids[0])
+
+        # 显示单个回合的统计或者整体统计
+        if rally_id and rally_id in self.movement_stats:
+            self._add_stats_to_plot(rally_id)
+        else:
+            # 如果是整场比赛数据，显示所有回合的总统计
+            self._add_stats_to_plot(None)
     def visualize(self):
         """Execute visualization processing"""
         if self.df.empty:
@@ -782,47 +770,44 @@ def analyze_player_positions(detections_path, output_dir=None, fps=30):
 if __name__ == "__main__":
     import sys
     from tkinter import Tk, filedialog
-    
+
     # Use file dialog to select detection file
     print("Please select detections.jsonl file...")
-    
+
     try:
         # Create hidden tkinter root window (for file dialog only)
         root = Tk()
         root.withdraw()
-        
+
         # Set default directory
         default_dir = "outputs"
         if not os.path.exists(default_dir):
             default_dir = os.getcwd()
-        
+
         # Open file selection dialog
         file_path = filedialog.askopenfilename(
             title="Select Player Position Detection File",
             filetypes=[("JSONL files", "*.jsonl"), ("All files", "*.*")],
             initialdir=default_dir
         )
-        
+
         # 如果用户取消选择，则退出
         if not file_path:
             print("No file selected, exiting program")
             sys.exit(0)
-            
-        # 调用分析函数
-        success = analyze_player_positions(file_path)
-        
-        if success:
+
+        if success := analyze_player_positions(file_path):
             print("\nVisualization test completed successfully")
         else:
             print("\nVisualization test failed")
-            
+
     except Exception as e:
         print(f"\nTest error: {e}")
-        
+
     finally:
         try:
             # 关闭tkinter窗口
             root.destroy()
-        except:
+        except Exception:
             pass
         
