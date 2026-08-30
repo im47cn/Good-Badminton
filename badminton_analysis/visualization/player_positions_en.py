@@ -808,6 +808,6 @@ if __name__ == "__main__":
         try:
             # 关闭tkinter窗口
             root.destroy()
-        except Exception:
+        except BaseException:
             pass
         
